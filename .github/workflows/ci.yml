@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.22", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files not formatted with gofmt:"; echo "$unformatted"; exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 1
+      - name: Build binaries
+        run: |
+          go build -trimpath -ldflags "-X main.version=${GITHUB_SHA::7}" -o bin/iso8583 ./cmd/iso8583
+          go build -trimpath -o bin/iso8583-sim ./cmd/iso8583-sim
+          ./bin/iso8583 version
+      - name: Benchmarks (smoke)
+        run: go test -run '^$' -bench . -benchtime 100x ./...
+
+  fuzz:
+    name: fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Run every fuzz target for 10s
+        run: |
+          for pkg in $(go list ./...); do
+            dir=$(go list -f '{{.Dir}}' "$pkg")
+            for target in $(grep -ho '^func Fuzz[A-Za-z0-9_]*' "$dir"/*_test.go 2>/dev/null | sed 's/^func //'); do
+              echo "::group::$pkg $target"
+              go test -run='^$' -fuzz="^${target}\$" -fuzztime=10s -fuzzminimizetime=1s "$pkg"
+              echo "::endgroup::"
+            done
+          done
+
+  docker:
+    name: simulator image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t iso8583-sim .

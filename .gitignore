@@ -1,0 +1,20 @@
+# Binaries
+/bin/
+/iso8583
+/iso8583-sim
+/cmd/iso8583/iso8583
+/cmd/iso8583-sim/iso8583-sim
+*.exe
+*.test
+
+# Test and coverage output
+*.out
+coverage.*
+/testdata/fuzz/
+**/testdata/fuzz/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
